@@ -279,6 +279,7 @@ def perform_installation(mountpoint):
 
 		archinstall.use_mirrors(archinstall.arguments['mirror-region']) # Set the mirrors for the live medium
 		if installation.minimal_installation():
+			installation.add_additional_packages(['git', 'nano', 'wget', 'git', 'aperture-neofetch', 'aperture-mirrorlist', 'aperture-hooks', 'glados-keyring'])
 			installation.set_hostname(archinstall.arguments['hostname'])
 			installation.set_mirrors(archinstall.arguments['mirror-region']) # Set the mirrors in the installation medium
 			installation.set_keyboard_language(archinstall.arguments['keyboard-language'])
