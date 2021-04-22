@@ -132,7 +132,9 @@ def ask_for_additional_users(prompt='Any additional users to install (leave blan
 	return users, super_users
 
 def ask_for_a_timezone():
-	timezone = input('Enter a valid timezone (Example: Europe/Stockholm): ').strip()
+	timezone = input('Enter a valid timezone (examples: Europe/Stockholm, US/Eastern) or press enter to use UTC: ').strip()
+	if timezone == '':
+		timezone = 'UTC'
 	if (pathlib.Path("/usr")/"share"/"zoneinfo"/timezone).exists():
 		return timezone
 	else:
@@ -186,7 +188,7 @@ def ask_to_configure_network():
 	elif nic:
 		return nic
 
-	return None
+	return {}
 
 def ask_for_disk_layout():
 	options = {
@@ -323,6 +325,8 @@ def select_language(options, show_only_country_codes=True):
 	:return: The language/dictionary key of the selected language
 	:rtype: str
 	"""
+	DEFAULT_KEYBOARD_LANGUAGE = 'us'
+	
 	if show_only_country_codes:
 		languages = sorted([language for language in list(options) if len(language) == 2])
 	else:
@@ -332,9 +336,12 @@ def select_language(options, show_only_country_codes=True):
 		for index, language in enumerate(languages):
 			print(f"{index}: {language}")
 
-		print(' -- You can enter ? or help to search for more languages --')
+		print(' -- You can enter ? or help to search for more languages, or skip to use US layout --')
 		selected_language = input('Select one of the above keyboard languages (by number or full name): ')
-		if selected_language.lower() in ('?', 'help'):
+		
+		if len(selected_language.strip()) == 0:
+			return DEFAULT_KEYBOARD_LANGUAGE
+		elif selected_language.lower() in ('?', 'help'):
 			while True:
 				filter_string = input('Search for layout containing (example: "sv-"): ')
 				new_options = list(search_keyboard_layout(filter_string))
@@ -347,6 +354,7 @@ def select_language(options, show_only_country_codes=True):
 
 		elif selected_language.isdigit() and (pos := int(selected_language)) <= len(languages)-1:
 			selected_language = languages[pos]
+			return selected_language
 		# I'm leaving "options" on purpose here.
 		# Since languages possibly contains a filtered version of
 		# all possible language layouts, and we might want to write
@@ -354,9 +362,9 @@ def select_language(options, show_only_country_codes=True):
 		# go through the search step.
 		elif selected_language in options:
 			selected_language = options[options.index(selected_language)]
+			return selected_language
 		else:
-			RequirementError("Selected language does not exist.")
-		return selected_language
+			raise RequirementError("Selected language does not exist.")
 
 	raise RequirementError("Selecting languages require a least one language to be given as an option.")
 
@@ -380,25 +388,27 @@ def select_mirror_regions(mirrors, show_top_mirrors=True):
 	selected_mirrors = {}
 
 	if len(regions) >= 1:
-		print_large_list(regions, margin_bottom=2)
+		print_large_list(regions, margin_bottom=4)
 
 		print(' -- You can skip this step by leaving the option blank --')
 		selected_mirror = input('Select one of the above regions to download packages from (by number or full name): ')
 		if len(selected_mirror.strip()) == 0:
+			# Returning back empty options which can be both used to
+			# do "if x:" logic as well as do `x.get('mirror', {}).get('sub', None)` chaining
 			return {}
 
-		elif selected_mirror.isdigit() and (pos := int(selected_mirror)) <= len(regions)-1:
+		elif selected_mirror.isdigit() and int(selected_mirror) <= len(regions)-1:
+			# I'm leaving "mirrors" on purpose here.
+			# Since region possibly contains a known region of
+			# all possible regions, and we might want to write
+			# for instance Sweden (if we know that exists) without having to
+			# go through the search step.
 			region = regions[int(selected_mirror)]
 			selected_mirrors[region] = mirrors[region]
-		# I'm leaving "mirrors" on purpose here.
-		# Since region possibly contains a known region of
-		# all possible regions, and we might want to write
-		# for instance Sweden (if we know that exists) without having to
-		# go through the search step.
 		elif selected_mirror in mirrors:
 			selected_mirrors[selected_mirror] = mirrors[selected_mirror]
 		else:
-			RequirementError("Selected region does not exist.")
+			raise RequirementError("Selected region does not exist.")
 
 		return selected_mirrors
 
@@ -412,15 +422,7 @@ def select_driver(options=AVAILABLE_GFX_DRIVERS):
 	(The template xorg is for beginner users, not advanced, and should
 	there for appeal to the general public first and edge cases later)
 	"""
-	drivers = sorted(list(options))
-
-	if len(drivers) >= 1:
-		for index, driver in enumerate(drivers):
-			print(f"{index}: {driver}")
-
-		print(' -- The above list are supported graphic card drivers. --')
-		print(' -- You need to select (and read about) which one you need. --')
-
+	if len(options) >= 1:
 		lspci = sys_command(f'/usr/bin/lspci')
 		for line in lspci.trace_log.split(b'\r\n'):
 			if b' vga ' in line.lower():
@@ -429,37 +431,16 @@ def select_driver(options=AVAILABLE_GFX_DRIVERS):
 				elif b'amd' in line.lower():
 					print(' ** AMD card detected, suggested driver: AMD / ATI **')
 
-		selected_driver = input('Select your graphics card driver: ')
+		selected_driver = generic_select(options, input_text="Select your graphics card driver: ", sort=True)
 		initial_option = selected_driver
 
-		# Disabled search for now, only a few profiles exist anyway
-		#
-		#print(' -- You can enter ? or help to search for more drivers --')
-		#if selected_driver.lower() in ('?', 'help'):
-		#	filter_string = input('Search for layout containing (example: "sv-"): ')
-		#	new_options = search_keyboard_layout(filter_string)
-		#	return select_language(new_options)
-		if selected_driver.isdigit() and (pos := int(selected_driver)) <= len(drivers)-1:
-			selected_driver = options[drivers[pos]]
-		elif selected_driver in options:
-			selected_driver = options[options.index(selected_driver)]
-		elif len(selected_driver) == 0:
-			raise RequirementError("At least one graphics driver is needed to support a graphical environment. Please restart the installer and try again.")
-		else:
-			raise RequirementError("Selected driver does not exist.")
+		if type(options[initial_option]) == dict:
+			driver_options = sorted(options[initial_option].keys())
 
-		if type(selected_driver) == dict:
-			driver_options = sorted(list(selected_driver))
-			for index, driver_package_group in enumerate(driver_options):
-				print(f"{index}: {driver_package_group}")
-
-			selected_driver_package_group = input(f'Which driver-type do you want for {initial_option}: ')
-			if selected_driver_package_group.isdigit() and (pos := int(selected_driver_package_group)) <= len(driver_options)-1:
-				selected_driver_package_group = selected_driver[driver_options[pos]]
-			elif selected_driver_package_group in selected_driver:
-				selected_driver_package_group = selected_driver[selected_driver.index(selected_driver_package_group)]
-			elif len(selected_driver_package_group) == 0:
-				raise RequirementError(f"At least one driver package is required for a graphical environment using {selected_driver}. Please restart the installer and try again.")
+			selected_driver_package_group = generic_select(driver_options, input_text=f"Which driver-type do you want for {initial_option}: ")
+			if selected_driver_package_group in options[initial_option].keys():
+				print(options[initial_option][selected_driver_package_group])
+				selected_driver = options[initial_option][selected_driver_package_group]
 			else:
 				raise RequirementError(f"Selected driver-type does not exist for {initial_option}.")
 

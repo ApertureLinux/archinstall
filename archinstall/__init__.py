@@ -1,3 +1,4 @@
+"""Arch Linux installer - guided, templates etc."""
 from .lib.general import *
 from .lib.disk import *
 from .lib.user_interaction import *
@@ -14,7 +15,7 @@ from .lib.output import *
 from .lib.storage import *
 from .lib.hardware import *
 
-__version__ = "2.1.3"
+__version__ = "2.2.0"
 
 ## Basic version of arg.parse() supporting:
 ##  --key=value
